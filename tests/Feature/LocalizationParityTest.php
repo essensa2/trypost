@@ -5,9 +5,9 @@ declare(strict_types=1);
 use App\Enums\Workspace\ContentLanguage;
 use Illuminate\Support\Arr;
 
-test('every UI language in config matches the ContentLanguage enum', function () {
-    expect(array_keys(config('languages.available')))
-        ->toEqualCanonicalizing(ContentLanguage::values());
+test('every translated UI language is a supported content language', function () {
+    expect(array_diff(array_keys(config('languages.available')), ContentLanguage::values()))
+        ->toBe([]);
 });
 
 test('the default UI language is a supported content language', function () {
@@ -44,4 +44,4 @@ test('locale ships every base translation file with identical keys', function (s
 
     expect($missingFiles)->toBe([], "{$locale} is missing translation files: ".implode(', ', $missingFiles));
     expect($keyDrift)->toBe([], "{$locale} has key drift: ".json_encode($keyDrift, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-})->with(ContentLanguage::values());
+})->with(array_keys(config('languages.available')));

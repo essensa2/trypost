@@ -8,15 +8,20 @@ namespace App\Enums\Workspace;
  * The set of languages the app supports, and the single source of truth for it:
  * request validation, the brand analyzer's structured-output enum, homepage
  * language detection, the AI image prompt's language name, the content-language
- * picker options, and the right-to-left direction of the UI all derive from it.
+ * picker options, and AI generation language names all derive from it.
  *
  * The string value is the language code stored on the workspace and passed
- * straight to the content prompts (`content_language`); the same codes also back
- * the application's UI locales, so `direction()` drives the document `dir` attribute.
+ * straight to the content prompts (`content_language`). Content languages are a
+ * superset of translated UI locales: content can be generated in a language even
+ * when the application chrome remains in English.
  */
 enum ContentLanguage: string
 {
     case English = 'en';
+    case Estonian = 'et';
+    case Latvian = 'lv';
+    case Lithuanian = 'lt';
+    case Finnish = 'fi';
     case PortugueseBrazil = 'pt-BR';
     case Spanish = 'es';
     case French = 'fr';
@@ -41,6 +46,10 @@ enum ContentLanguage: string
     {
         return match ($this) {
             self::English => 'English',
+            self::Estonian => 'Eesti',
+            self::Latvian => 'Latviešu',
+            self::Lithuanian => 'Lietuvių',
+            self::Finnish => 'Suomi',
             self::PortugueseBrazil => 'Português (Brasil)',
             self::Spanish => 'Español',
             self::French => 'Français',
@@ -66,6 +75,10 @@ enum ContentLanguage: string
     {
         return match ($this) {
             self::English => 'English',
+            self::Estonian => 'Estonian',
+            self::Latvian => 'Latvian',
+            self::Lithuanian => 'Lithuanian',
+            self::Finnish => 'Finnish',
             self::PortugueseBrazil => 'Brazilian Portuguese',
             self::Spanish => 'Spanish',
             self::French => 'French',

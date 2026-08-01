@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware\App;
 
-use App\Enums\Workspace\ContentLanguage;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
@@ -22,10 +21,9 @@ class SetLocale
         $locale = $request->cookie('locale');
         $isValid = $locale && array_key_exists($locale, $available);
         $activeLocale = $isValid ? $locale : config('languages.default');
-        $language = ContentLanguage::tryFrom($activeLocale) ?? ContentLanguage::DEFAULT;
 
         App::setLocale($activeLocale);
-        View::share('htmlDir', $language->direction());
+        View::share('htmlDir', $activeLocale === 'ar' ? 'rtl' : 'ltr');
 
         $response = $next($request);
 

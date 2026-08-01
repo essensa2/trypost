@@ -6,7 +6,7 @@ use App\Enums\Workspace\ContentLanguage;
 
 test('values exposes every supported content-language code', function () {
     expect(ContentLanguage::values())->toBe([
-        'en', 'pt-BR', 'es', 'fr', 'de', 'it', 'nl',
+        'en', 'et', 'lv', 'lt', 'fi', 'pt-BR', 'es', 'fr', 'de', 'it', 'nl',
         'pl', 'el', 'ja', 'ko', 'zh', 'ru', 'tr', 'ar',
     ]);
 });
@@ -21,6 +21,10 @@ test('options pairs each code with its native and English label', function () {
 
     expect($options)->toHaveCount(count(ContentLanguage::cases()));
     expect($options[0])->toBe(['value' => 'en', 'label' => 'English', 'englishName' => 'English']);
+    expect($options)->toContain(['value' => 'et', 'label' => 'Eesti', 'englishName' => 'Estonian']);
+    expect($options)->toContain(['value' => 'lv', 'label' => 'Latviešu', 'englishName' => 'Latvian']);
+    expect($options)->toContain(['value' => 'lt', 'label' => 'Lietuvių', 'englishName' => 'Lithuanian']);
+    expect($options)->toContain(['value' => 'fi', 'label' => 'Suomi', 'englishName' => 'Finnish']);
     expect($options)->toContain(['value' => 'pt-BR', 'label' => 'Português (Brasil)', 'englishName' => 'Brazilian Portuguese']);
     expect($options)->toContain(['value' => 'ja', 'label' => '日本語', 'englishName' => 'Japanese']);
 });
@@ -29,6 +33,10 @@ test('englishName returns a distinct English name for every language', function 
     expect($language->englishName())->toBe($expected);
 })->with([
     [ContentLanguage::English, 'English'],
+    [ContentLanguage::Estonian, 'Estonian'],
+    [ContentLanguage::Latvian, 'Latvian'],
+    [ContentLanguage::Lithuanian, 'Lithuanian'],
+    [ContentLanguage::Finnish, 'Finnish'],
     [ContentLanguage::PortugueseBrazil, 'Brazilian Portuguese'],
     [ContentLanguage::Spanish, 'Spanish'],
     [ContentLanguage::French, 'French'],
@@ -55,6 +63,10 @@ test('label returns the native name for every language', function (ContentLangua
     expect($language->label())->toBe($expected);
 })->with([
     [ContentLanguage::English, 'English'],
+    [ContentLanguage::Estonian, 'Eesti'],
+    [ContentLanguage::Latvian, 'Latviešu'],
+    [ContentLanguage::Lithuanian, 'Lietuvių'],
+    [ContentLanguage::Finnish, 'Suomi'],
     [ContentLanguage::PortugueseBrazil, 'Português (Brasil)'],
     [ContentLanguage::Spanish, 'Español'],
     [ContentLanguage::French, 'Français'],
@@ -87,6 +99,10 @@ test('fromHtmlLang resolves the two-letter primary subtag', function (string $la
     ['pt', ContentLanguage::PortugueseBrazil],
     ['pt-PT', ContentLanguage::PortugueseBrazil],
     ['en-US', ContentLanguage::English],
+    ['et-EE', ContentLanguage::Estonian],
+    ['lv-LV', ContentLanguage::Latvian],
+    ['lt-LT', ContentLanguage::Lithuanian],
+    ['fi-FI', ContentLanguage::Finnish],
     ['es-MX', ContentLanguage::Spanish],
     ['fr', ContentLanguage::French],
     ['ja-JP', ContentLanguage::Japanese],
