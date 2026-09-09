@@ -13,6 +13,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\App\SocialAccountResource;
 use App\Models\SocialAccount;
 use App\Models\Workspace;
+use App\Services\SocialConnectionContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -30,6 +31,27 @@ class SocialController extends Controller
         if (isset($this->platform) && ! $this->platform->isEnabled()) {
             abort(SymfonyResponse::HTTP_FORBIDDEN, 'This platform is currently unavailable.');
         }
+    }
+
+    protected function connectionWorkspace(Request $request, SocialPlatform $platform): ?Workspace
+    {
+        $workspace = app(SocialConnectionContext::class)->resolveWorkspace($request, $platform);
+
+        if ($workspace && $request->session()->get('social_connection_mode') === 'guest') {
+            Inertia::setRootView('guest');
+        }
+
+        return $workspace;
+    }
+
+    protected function completeGuestConnection(Request $request, SocialAccount $socialAccount): void
+    {
+        app(SocialConnectionContext::class)->completeGuestConnection($request, $socialAccount);
+    }
+
+    protected function recordGuestConnectionEvent(Request $request, SocialPlatform $platform, string $event): void
+    {
+        app(SocialConnectionContext::class)->recordGuestEvent($request, $platform, $event);
     }
 
     public function index(Request $request): Response
@@ -180,7 +202,26 @@ class SocialController extends Controller
      */
     protected function popupCallback(bool $success, string $message, ?string $platform = null): Response
     {
+        $isGuestConnection = session('social_connection_mode') === 'guest';
+
+        if ($isGuestConnection && ! $success && $platform && ($socialPlatform = SocialPlatform::tryFrom($platform))) {
+            $this->recordGuestConnectionEvent(request(), $socialPlatform, 'oauth_failed');
+        }
+
         $this->forgetSocialConnectSession();
+
+        if ($isGuestConnection) {
+            session()->forget('social_connection_mode');
+            Inertia::setRootView('guest');
+
+            return Inertia::render('guest/ConnectionResult', [
+                'success' => $success,
+                'message' => $success ? __('guest_connections.connected') : $message,
+                'title' => $success
+                    ? __('guest_connections.success_title')
+                    : __('guest_connections.error_title'),
+            ]);
+        }
 
         return Inertia::render('accounts/PopupCallback', [
             'success' => $success,

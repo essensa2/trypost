@@ -144,4 +144,12 @@ return [
         'api_key' => env('GEMINI_API_KEY'),
     ],
 
+    'ais' => [
+        'partner_token' => env('AIS_PARTNER_TOKEN'),
+        'service_user_id' => env('AIS_SERVICE_USER_ID'),
+        'webhook_url' => env('AIS_WEBHOOK_URL'),
+        'webhook_secret' => env('AIS_WEBHOOK_SECRET'),
+        'connection_link_ttl_days' => (int) env('AIS_CONNECTION_LINK_TTL_DAYS', 7),
+    ],
+
 ];

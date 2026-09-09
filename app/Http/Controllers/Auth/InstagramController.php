@@ -7,8 +7,10 @@ namespace App\Http\Controllers\Auth;
 use App\Enums\SocialAccount\Platform as SocialPlatform;
 use App\Enums\SocialAccount\Status;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
-use App\Models\Workspace;
+use App\Models\ConnectionAuthorizationRequest;
+use App\Services\Social\TokenRedactor;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
@@ -38,7 +40,32 @@ class InstagramController extends SocialController
         session([
             'social_connect_workspace' => $workspace->id,
             'social_reconnect_id' => null,
+            'social_connection_mode' => 'user',
         ]);
+
+        $url = Socialite::driver($this->driver)
+            ->scopes($this->scopes)
+            ->redirect()
+            ->getTargetUrl();
+
+        return Inertia::location($url);
+    }
+
+    public function guestConnect(
+        Request $request,
+        ConnectionAuthorizationRequest $connectionAuthorizationRequest,
+    ): Response {
+        $this->ensurePlatformEnabled();
+
+        abort_unless($connectionAuthorizationRequest->platform->socialPlatform() === $this->platform, 404);
+
+        session([
+            'social_connect_workspace' => $connectionAuthorizationRequest->workspace_id,
+            'social_reconnect_id' => null,
+            'social_connection_mode' => 'guest',
+        ]);
+
+        $this->recordGuestConnectionEvent($request, $this->platform, 'oauth_started');
 
         $url = Socialite::driver($this->driver)
             ->scopes($this->scopes)
@@ -56,9 +83,9 @@ class InstagramController extends SocialController
             return $this->popupCallback(false, __('accounts.popup_callback.session_expired'), $this->platform->value);
         }
 
-        $workspace = Workspace::find($workspaceId);
+        $workspace = $this->connectionWorkspace($request, $this->platform);
 
-        if (! $workspace || ! $request->user()->can('manageAccounts', $workspace)) {
+        if (! $workspace) {
             return $this->popupCallback(false, __('accounts.popup_callback.workspace_not_found'), $this->platform->value);
         }
 
@@ -72,35 +99,38 @@ class InstagramController extends SocialController
             $expiresIn = $socialUser->expiresIn ?? $this->platform->defaultTokenTtlSeconds();
             $tokenExpiresAt = now()->addSeconds($expiresIn);
 
-            $workspace->socialAccounts()->updateOrCreate(
-                [
-                    'platform' => $this->platform->value,
-                    'platform_user_id' => $socialUser->getId(),
-                ],
-                [
-                    'username' => $socialUser->getNickname(),
-                    'display_name' => $socialUser->getName() ?? $socialUser->getNickname(),
-                    'avatar_url' => $avatarPath,
-                    'access_token' => $socialUser->token,
-                    'refresh_token' => $socialUser->refreshToken,
-                    'token_expires_at' => $tokenExpiresAt,
-                    'scopes' => $this->scopes,
-                    'status' => Status::Connected,
-                    'error_message' => null,
-                    'disconnected_at' => null,
-                    'meta' => [
-                        'account_type' => $socialUser->user['account_type'] ?? null,
+            DB::transaction(function () use ($request, $workspace, $socialUser, $avatarPath, $tokenExpiresAt): void {
+                $socialAccount = $workspace->socialAccounts()->updateOrCreate(
+                    [
+                        'platform' => $this->platform->value,
+                        'platform_user_id' => $socialUser->getId(),
                     ],
-                ],
-            );
+                    [
+                        'username' => $socialUser->getNickname(),
+                        'display_name' => $socialUser->getName() ?? $socialUser->getNickname(),
+                        'avatar_url' => $avatarPath,
+                        'access_token' => $socialUser->token,
+                        'refresh_token' => $socialUser->refreshToken,
+                        'token_expires_at' => $tokenExpiresAt,
+                        'scopes' => $this->scopes,
+                        'status' => Status::Connected,
+                        'error_message' => null,
+                        'disconnected_at' => null,
+                        'meta' => [
+                            'account_type' => $socialUser->user['account_type'] ?? null,
+                        ],
+                    ],
+                );
+
+                $this->completeGuestConnection($request, $socialAccount);
+            });
 
             return $this->popupCallback(true, __('accounts.popup_callback.connected'), $this->platform->value);
         } catch (NetworkAlreadyConnectedException) {
             return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $this->platform->value);
         } catch (\Exception $e) {
             Log::error('Instagram OAuth Error', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                'error' => TokenRedactor::redact($e->getMessage()),
             ]);
 
             return $this->popupCallback(false, __('accounts.popup_callback.error_connecting'), $this->platform->value);

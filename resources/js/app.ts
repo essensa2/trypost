@@ -10,7 +10,11 @@ import { createApp, h } from 'vue';
 import { initializeDataLayer } from './datalayer';
 import dayjs from './dayjs';
 import { syncContentTypeMediaRules } from './lib/contentTypeMediaRules';
-import { capturePageview, initializePostHog, syncPostHogContext } from './posthog';
+import {
+    capturePageview,
+    initializePostHog,
+    syncPostHogContext,
+} from './posthog';
 import type { Auth } from './types';
 
 const appName = import.meta.env.VITE_APP_NAME || 'TryPost.it';
@@ -24,33 +28,48 @@ createInertiaApp({
         ),
     setup({ el, App, props, plugin }) {
         // Get locale from shared Inertia props
-        const locale = (props.initialPage.props as { locale?: string })?.locale || 'en';
+        const locale =
+            (props.initialPage.props as { locale?: string })?.locale || 'en';
 
         // Set dayjs locale based on user's language
         dayjs.locale(locale.toLowerCase());
 
+        const isGuestConnectionPage =
+            props.initialPage.component.startsWith('guest/') ||
+            props.initialPage.props.guestConnection === true;
         const auth = props.initialPage.props.auth as Auth | undefined;
         const flash = props.initialPage.props.flash as
             | { conversion_event?: string; [key: string]: unknown }
             | undefined;
 
-        initializeDataLayer(
-            auth,
-            flash,
-            props.initialPage.props.applicationUrl as string,
-            props.initialPage.props.env as string,
-        );
+        if (!isGuestConnectionPage) {
+            initializeDataLayer(
+                auth,
+                flash,
+                props.initialPage.props.applicationUrl as string,
+                props.initialPage.props.env as string,
+            );
+        }
 
         // Initial PostHog identify + dual-group context + first pageview.
         // The same hooks fire on every Inertia navigation below so the
         // account group counts stay reactive and workspace switches
         // re-attach the right workspace group.
-        initializePostHog();
-        syncPostHogContext(props.initialPage);
+        if (!isGuestConnectionPage) {
+            initializePostHog();
+            syncPostHogContext(props.initialPage);
+            capturePageview();
+        }
         syncContentTypeMediaRules(props.initialPage);
-        capturePageview();
 
         router.on('navigate', (event) => {
+            if (
+                event.detail.page.component.startsWith('guest/') ||
+                event.detail.page.props.guestConnection === true
+            ) {
+                return;
+            }
+
             syncPostHogContext(event.detail.page);
             syncContentTypeMediaRules(event.detail.page);
             capturePageview();

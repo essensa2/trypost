@@ -10,12 +10,34 @@ use App\Http\Controllers\Api\SignatureController;
 use App\Http\Controllers\Api\SocialAccountController;
 use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\Api\WorkspaceController;
+use App\Http\Controllers\Partner\ConnectionAuthorizationRequestController as PartnerConnectionAuthorizationRequestController;
+use App\Http\Controllers\Partner\WorkspaceController as PartnerWorkspaceController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/uploads/{token}', [UploadController::class, 'store'])
     ->middleware(['signed', 'throttle:signed-uploads'])
     ->whereUuid('token')
     ->name('api.uploads.store');
+
+Route::prefix('partner')->middleware(['partner.auth', 'throttle:partner'])->group(function () {
+    Route::post('/workspaces', [PartnerWorkspaceController::class, 'store'])
+        ->name('api.partner.workspaces.store');
+    Route::post('/workspaces/{workspace}/credentials/rotate', [PartnerWorkspaceController::class, 'rotateCredential'])
+        ->whereUuid('workspace')
+        ->name('api.partner.workspaces.credentials.rotate');
+    Route::get('/workspaces/{workspace}/social-accounts', [PartnerWorkspaceController::class, 'socialAccounts'])
+        ->whereUuid('workspace')
+        ->name('api.partner.workspaces.social-accounts');
+
+    Route::post('/connection-requests', [PartnerConnectionAuthorizationRequestController::class, 'store'])
+        ->name('api.partner.connection-requests.store');
+    Route::get('/connection-requests/{externalRequestId}', [PartnerConnectionAuthorizationRequestController::class, 'show'])
+        ->whereUuid('externalRequestId')
+        ->name('api.partner.connection-requests.show');
+    Route::delete('/connection-requests/{externalRequestId}', [PartnerConnectionAuthorizationRequestController::class, 'destroy'])
+        ->whereUuid('externalRequestId')
+        ->name('api.partner.connection-requests.destroy');
+});
 
 Route::middleware(['auth:api', 'workspace.token', 'throttle:api'])->group(function () {
     // Posts

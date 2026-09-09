@@ -6,6 +6,9 @@ use App\Http\Middleware\Api\LoadWorkspaceFromToken;
 use App\Http\Middleware\App\EnsureRegistrationEnabled;
 use App\Http\Middleware\App\HandleInertiaRequests;
 use App\Http\Middleware\App\SetLocale;
+use App\Http\Middleware\Partner\AuthenticatePartnerRequest;
+use App\Http\Middleware\Partner\EnsureGuestConnectionGrant;
+use App\Http\Middleware\Partner\SecureGuestConnectionPortal;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -36,6 +39,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'workspace.token' => LoadWorkspaceFromToken::class,
             'registration.enabled' => EnsureRegistrationEnabled::class,
+            'partner.auth' => AuthenticatePartnerRequest::class,
+            'guest.connection' => EnsureGuestConnectionGrant::class,
+            'guest.connection.secure' => SecureGuestConnectionPortal::class,
         ]);
 
         $middleware->preventRequestForgery(except: [

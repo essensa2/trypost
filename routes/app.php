@@ -45,9 +45,35 @@ use App\Http\Controllers\Auth\ThreadsController;
 use App\Http\Controllers\Auth\TikTokController;
 use App\Http\Controllers\Auth\XController;
 use App\Http\Controllers\Auth\YouTubeController;
+use App\Http\Controllers\Partner\GuestConnectionController;
 use App\Http\Middleware\App\EnsureAccountReady;
 use App\Http\Middleware\App\EnsureHasWorkspace;
 use Illuminate\Support\Facades\Route;
+
+Route::middleware('guest.connection.secure')->group(function () {
+    Route::get('connections', [GuestConnectionController::class, 'entry'])
+        ->middleware('throttle:20,1')
+        ->name('guest.connections.entry');
+    Route::post('connections/claim', [GuestConnectionController::class, 'claim'])
+        ->middleware('throttle:20,1')
+        ->name('guest.connections.claim');
+
+    Route::middleware('guest.connection')->group(function () {
+        Route::get('connections/authorize/{connectionAuthorizationRequest}', [GuestConnectionController::class, 'show'])
+            ->name('guest.connections.show');
+        Route::get('connections/authorize/{connectionAuthorizationRequest}/facebook', [FacebookController::class, 'guestConnect'])
+            ->name('guest.connections.facebook.connect');
+        Route::get('connections/authorize/{connectionAuthorizationRequest}/instagram', [InstagramController::class, 'guestConnect'])
+            ->name('guest.connections.instagram.connect');
+    });
+
+    // These callbacks authorize against either the existing signed-in user or
+    // the claimed guest connection session in their controller.
+    Route::get('accounts/facebook/callback', [FacebookController::class, 'callback'])->name('app.social.facebook.callback');
+    Route::get('accounts/facebook/select', [FacebookController::class, 'selectPage'])->name('app.social.facebook.select-page');
+    Route::post('accounts/facebook/select', [FacebookController::class, 'select'])->name('app.social.facebook.select');
+    Route::get('accounts/instagram/callback', [InstagramController::class, 'callback'])->name('app.social.instagram.callback');
+});
 
 // Subscription selection (requires auth but not subscription)
 Route::middleware(['auth'])->group(function () {
@@ -123,11 +149,6 @@ Route::middleware(['auth'])->group(function () {
     Route::get('accounts/youtube/select', [YouTubeController::class, 'selectChannel'])->name('app.social.youtube.select-channel');
     Route::post('accounts/youtube/select', [YouTubeController::class, 'select'])->name('app.social.youtube.select');
 
-    Route::get('accounts/facebook/callback', [FacebookController::class, 'callback'])->name('app.social.facebook.callback');
-    Route::get('accounts/facebook/select', [FacebookController::class, 'selectPage'])->name('app.social.facebook.select-page');
-    Route::post('accounts/facebook/select', [FacebookController::class, 'select'])->name('app.social.facebook.select');
-
-    Route::get('accounts/instagram/callback', [InstagramController::class, 'callback'])->name('app.social.instagram.callback');
     Route::get('accounts/instagram/select', [InstagramController::class, 'selectAccount'])->name('app.social.instagram.select-account');
     Route::post('accounts/instagram/select', [InstagramController::class, 'select'])->name('app.social.instagram.select');
 
