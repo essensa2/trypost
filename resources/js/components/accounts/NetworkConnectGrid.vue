@@ -356,6 +356,12 @@ const cardState = computed((): Record<string, CardStateValue> => {
                         )
                     }}
                 </Button>
+                <p
+                    v-if="platform.value === Platform.Facebook"
+                    class="text-xs leading-tight text-foreground/60"
+                >
+                    {{ $t('accounts.facebook.meta_selection_tip') }}
+                </p>
             </div>
         </div>
 

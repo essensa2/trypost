@@ -41,7 +41,7 @@ test('facebook connect redirects to oauth provider', function () {
     expect(session('social_connect_workspace'))->toBe($this->workspace->id);
 });
 
-test('facebook oauth callback creates account with single page', function () {
+test('facebook oauth callback asks which page to connect even when Meta grants one page', function () {
     session([
         'social_connect_workspace' => $this->workspace->id,
     ]);
@@ -70,9 +70,19 @@ test('facebook oauth callback creates account with single page', function () {
 
     $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
 
-    $response->assertOk();
-    $response->assertInertia(fn (AssertableInertia $page) => $page->component('accounts/PopupCallback'));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
+    $response->assertRedirect(route('app.social.facebook.select-page'));
+
+    $this->actingAs($this->user)->get(route('app.social.facebook.select-page'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('accounts/FacebookPageSelect')
+            ->has('pages', 1)
+            ->where('connectedPageIds', []));
+
+    $this->actingAs($this->user)->post(route('app.social.facebook.select'), [
+        'page_ids' => ['page_123'],
+    ])->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
 
     $this->assertDatabaseHas('social_accounts', [
         'workspace_id' => $this->workspace->id,
@@ -118,7 +128,12 @@ test('facebook callback shows network_taken when the network is already connecte
         ], 200),
     ]);
 
-    $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
+    $this->actingAs($this->user)->get(route('app.social.facebook.callback'))
+        ->assertRedirect(route('app.social.facebook.select-page'));
+
+    $response = $this->actingAs($this->user)->post(route('app.social.facebook.select'), [
+        'page_ids' => ['page_123'],
+    ]);
 
     $response->assertOk();
     $response->assertInertia(fn (AssertableInertia $page) => $page->component('accounts/PopupCallback'));
@@ -260,7 +275,18 @@ test('user can connect multiple facebook pages in hosted mode', function () {
         ], 200),
     ]);
 
-    $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
+    $this->actingAs($this->user)->get(route('app.social.facebook.callback'))
+        ->assertRedirect(route('app.social.facebook.select-page'));
+
+    $this->actingAs($this->user)->get(route('app.social.facebook.select-page'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('connectedPageIds', ['page_existing'])
+            ->missing('pages.0.access_token'));
+
+    $response = $this->actingAs($this->user)->post(route('app.social.facebook.select'), [
+        'page_ids' => ['page_new'],
+    ]);
 
     $response->assertOk();
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
@@ -287,7 +313,7 @@ test('facebook callback handles oauth errors gracefully', function () {
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Error connecting account. Please try again.'));
 });
 
-test('facebook page selection creates account', function () {
+test('facebook page selection connects multiple selected pages', function () {
     session([
         'social_connect_workspace' => $this->workspace->id,
         'facebook_oauth' => [
@@ -313,7 +339,7 @@ test('facebook page selection creates account', function () {
     ]);
 
     $response = $this->actingAs($this->user)->post(route('app.social.facebook.select'), [
-        'page_id' => 'page_123',
+        'page_ids' => ['page_123', 'page_456'],
     ]);
 
     $response->assertOk();
@@ -325,13 +351,21 @@ test('facebook page selection creates account', function () {
         'platform_user_id' => 'page_123',
         'username' => 'myfbpage',
     ]);
+
+    $this->assertDatabaseHas('social_accounts', [
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Facebook->value,
+        'platform_user_id' => 'page_456',
+        'username' => 'otherpage',
+        'is_active' => true,
+    ]);
 });
 
 test('facebook page selection fails with expired session', function () {
     // No session data
 
     $response = $this->actingAs($this->user)->post(route('app.social.facebook.select'), [
-        'page_id' => 'page_123',
+        'page_ids' => ['page_123'],
     ]);
 
     $response->assertOk();
@@ -357,10 +391,11 @@ test('facebook page selection fails with invalid page id', function () {
     ]);
 
     $response = $this->actingAs($this->user)->post(route('app.social.facebook.select'), [
-        'page_id' => 'invalid_page_id',
+        'page_ids' => ['page_123', 'invalid_page_id'],
     ]);
 
     $response->assertOk();
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Page not found.'));
+    $this->assertDatabaseMissing('social_accounts', ['platform_user_id' => 'page_123']);
 });

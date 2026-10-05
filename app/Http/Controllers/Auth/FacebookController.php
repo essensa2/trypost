@@ -117,43 +117,6 @@ class FacebookController extends SocialController
                 return $this->popupCallback(false, __('accounts.popup_callback.no_facebook_pages'), $this->platform->value);
             }
 
-            // If only one page, connect directly
-            if (count($pages) === 1) {
-                $page = $pages[0];
-                $avatarPath = uploadFromUrl(data_get($page, 'picture'));
-
-                DB::transaction(function () use ($request, $workspace, $page, $avatarPath, $socialUser): void {
-                    $socialAccount = $workspace->socialAccounts()->updateOrCreate(
-                        [
-                            'platform' => $this->platform->value,
-                            'platform_user_id' => data_get($page, 'id'),
-                        ],
-                        [
-                            'username' => data_get($page, 'username', null),
-                            'display_name' => data_get($page, 'name'),
-                            'avatar_url' => $avatarPath,
-                            'access_token' => data_get($page, 'access_token'),
-                            'refresh_token' => null,
-                            'token_expires_at' => null,
-                            'scopes' => $this->scopes,
-                            'status' => Status::Connected,
-                            'error_message' => null,
-                            'disconnected_at' => null,
-                            'meta' => [
-                                'page_id' => data_get($page, 'id'),
-                                'user_id' => $socialUser->getId(),
-                                'user_token' => $socialUser->token,
-                            ],
-                        ],
-                    );
-
-                    $this->completeGuestConnection($request, $socialAccount);
-                });
-
-                return $this->popupCallback(true, __('accounts.popup_callback.connected'), $this->platform->value);
-            }
-
-            // Multiple pages - store data and show selection
             session([
                 'facebook_oauth' => [
                     'user_token' => $socialUser->token,
@@ -174,7 +137,7 @@ class FacebookController extends SocialController
         }
     }
 
-    public function selectPage(Request $request)
+    public function selectPage(Request $request): InertiaResponse|RedirectResponse
     {
         $oauthData = session('facebook_oauth');
         $workspaceId = session('social_connect_workspace');
@@ -202,14 +165,21 @@ class FacebookController extends SocialController
         return Inertia::render('accounts/FacebookPageSelect', [
             'workspace' => $workspace->only(['id', 'name']),
             'pages' => $pages,
+            'connectedPageIds' => $workspace->socialAccounts()
+                ->where('platform', $this->platform->value)
+                ->pluck('platform_user_id'),
             'guestConnection' => session('social_connection_mode') === 'guest',
         ]);
     }
 
     public function select(Request $request): InertiaResponse
     {
-        $request->validate([
-            'page_id' => 'required|string',
+        $guestConnection = session('social_connection_mode') === 'guest';
+        $validated = $request->validate($guestConnection ? [
+            'page_id' => ['required', 'string'],
+        ] : [
+            'page_ids' => ['required', 'array', 'min:1'],
+            'page_ids.*' => ['required', 'string', 'distinct'],
         ]);
 
         $oauthData = session('facebook_oauth');
@@ -226,48 +196,20 @@ class FacebookController extends SocialController
         }
 
         try {
-            $selectedPage = collect(data_get($oauthData, 'pages'))->firstWhere('id', $request->page_id);
+            $pageIds = $guestConnection ? [$validated['page_id']] : $validated['page_ids'];
+            $selectedPages = collect(data_get($oauthData, 'pages'))
+                ->whereIn('id', $pageIds);
 
-            if (! $selectedPage) {
+            if ($selectedPages->count() !== count($pageIds)) {
                 return $this->popupCallback(false, __('accounts.popup_callback.page_not_found'), $this->platform->value);
             }
 
-            $avatarPath = uploadFromUrl(data_get($selectedPage, 'picture'));
             $reconnectId = data_get($oauthData, 'reconnect_id');
-            $reconnected = DB::transaction(function () use ($request, $workspace, $selectedPage, $avatarPath, $oauthData, $reconnectId): bool {
-                if ($reconnectId) {
-                    $existingAccount = $workspace->socialAccounts()->find($reconnectId);
-
-                    if ($existingAccount) {
-                        $existingAccount->update([
-                            'platform_user_id' => data_get($selectedPage, 'id'),
-                            'username' => data_get($selectedPage, 'username') ?? null,
-                            'display_name' => data_get($selectedPage, 'name'),
-                            'avatar_url' => $avatarPath,
-                            'access_token' => data_get($selectedPage, 'access_token'),
-                            'refresh_token' => null,
-                            'token_expires_at' => null,
-                            'scopes' => $this->scopes,
-                            'meta' => [
-                                'page_id' => data_get($selectedPage, 'id'),
-                                'user_id' => data_get($oauthData, 'user_id'),
-                                'user_token' => data_get($oauthData, 'user_token'),
-                            ],
-                        ]);
-                        $existingAccount->markAsConnected();
-                        $this->completeGuestConnection($request, $existingAccount);
-
-                        return true;
-                    }
-                }
-
-                $socialAccount = $workspace->socialAccounts()->updateOrCreate(
-                    [
-                        'platform' => $this->platform->value,
-                        'platform_user_id' => data_get($selectedPage, 'id'),
-                    ],
-                    [
-                        'username' => data_get($selectedPage, 'username') ?? null,
+            $reconnected = DB::transaction(function () use ($request, $workspace, $selectedPages, $oauthData, $reconnectId): bool {
+                foreach ($selectedPages as $selectedPage) {
+                    $avatarPath = uploadFromUrl(data_get($selectedPage, 'picture'));
+                    $attributes = [
+                        'username' => data_get($selectedPage, 'username'),
                         'display_name' => data_get($selectedPage, 'name'),
                         'avatar_url' => $avatarPath,
                         'access_token' => data_get($selectedPage, 'access_token'),
@@ -282,10 +224,32 @@ class FacebookController extends SocialController
                             'user_id' => data_get($oauthData, 'user_id'),
                             'user_token' => data_get($oauthData, 'user_token'),
                         ],
-                    ],
-                );
+                    ];
 
-                $this->completeGuestConnection($request, $socialAccount);
+                    if ($reconnectId && $selectedPages->count() === 1) {
+                        $existingAccount = $workspace->socialAccounts()->find($reconnectId);
+
+                        if ($existingAccount) {
+                            $existingAccount->update([
+                                ...$attributes,
+                                'platform_user_id' => data_get($selectedPage, 'id'),
+                            ]);
+                            $this->completeGuestConnection($request, $existingAccount);
+
+                            return true;
+                        }
+                    }
+
+                    $socialAccount = $workspace->socialAccounts()->updateOrCreate(
+                        [
+                            'platform' => $this->platform->value,
+                            'platform_user_id' => data_get($selectedPage, 'id'),
+                        ],
+                        $attributes,
+                    );
+
+                    $this->completeGuestConnection($request, $socialAccount);
+                }
 
                 return false;
             });

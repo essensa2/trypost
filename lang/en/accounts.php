@@ -82,7 +82,13 @@ return [
 
     'facebook' => [
         'title' => 'Select Facebook Page',
-        'description' => 'Choose which page you want to connect',
+        'description' => 'Choose the Pages you want to connect',
+        'meta_selection_tip' => 'In the Meta window, check every Page you want to add.',
+        'meta_access_hint' => 'Only Pages you selected in the Meta window appear here. To add another Page, select it there first.',
+        'change_meta_access' => 'Change Meta Page selection',
+        'select_all' => 'Select all',
+        'connect_selected' => 'Connect selected Pages',
+        'already_connected' => 'Already connected',
         'no_pages' => 'No pages found',
         'no_pages_description' => 'You are not an admin of any Facebook page.',
         'page_label' => 'Facebook Page',
