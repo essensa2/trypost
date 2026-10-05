@@ -118,6 +118,8 @@ return [
     |
     */
 
+    'allow_multiple_social_accounts' => env('ALLOW_MULTIPLE_SOCIAL_ACCOUNTS', true),
+
     'platforms' => [
         'linkedin' => [
             'enabled' => env('LINKEDIN_ENABLED', true),
@@ -140,6 +142,7 @@ return [
         'tiktok' => [
             'enabled' => env('TIKTOK_ENABLED', true),
             'api' => env('TIKTOK_API', 'https://open.tiktokapis.com/v2'),
+            'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env('TIKTOK_SCOPES', 'user.info.basic,video.publish'))))),
         ],
         'youtube' => [
             'enabled' => env('YOUTUBE_ENABLED', true),

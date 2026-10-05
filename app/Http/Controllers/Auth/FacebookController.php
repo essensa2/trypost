@@ -109,6 +109,10 @@ class FacebookController extends SocialController
             // Fetch pages the user manages
             $pages = $this->fetchPages($socialUser->token);
 
+            if ($pages === null) {
+                return $this->popupCallback(false, __('accounts.popup_callback.facebook_pages_unavailable'), $this->platform->value);
+            }
+
             if (empty($pages)) {
                 return $this->popupCallback(false, __('accounts.popup_callback.no_facebook_pages'), $this->platform->value);
             }
@@ -304,7 +308,7 @@ class FacebookController extends SocialController
         }
     }
 
-    private function fetchPages(string $userToken): array
+    private function fetchPages(string $userToken): ?array
     {
         try {
             $response = Http::get(config('trypost.platforms.facebook.graph_api').'/me/accounts', [
@@ -315,15 +319,22 @@ class FacebookController extends SocialController
             if ($response->failed()) {
                 Log::error('Facebook pages fetch failed', [
                     'status' => $response->status(),
-                    'body' => $response->body(),
+                    'body' => TokenRedactor::redact($response->body()),
                 ]);
 
-                return [];
+                return null;
             }
 
             $data = $response->json();
+            $pages = data_get($data, 'data');
 
-            return collect(data_get($data, 'data', []))->map(fn ($page) => [
+            if (! is_array($pages)) {
+                Log::error('Facebook pages fetch returned an invalid response');
+
+                return null;
+            }
+
+            return collect($pages)->map(fn ($page) => [
                 'id' => data_get($page, 'id'),
                 'name' => data_get($page, 'name'),
                 'username' => data_get($page, 'username', null),
@@ -332,10 +343,10 @@ class FacebookController extends SocialController
             ])->toArray();
         } catch (\Exception $e) {
             Log::error('Facebook pages fetch error', [
-                'error' => $e->getMessage(),
+                'error' => TokenRedactor::redact($e->getMessage()),
             ]);
 
-            return [];
+            return null;
         }
     }
 

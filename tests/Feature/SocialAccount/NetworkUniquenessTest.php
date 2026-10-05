@@ -10,7 +10,43 @@ use App\Models\Workspace;
 
 beforeEach(function () {
     config()->set('trypost.self_hosted', false);
+    config()->set('trypost.allow_multiple_social_accounts', false);
     $this->workspace = Workspace::factory()->create();
+});
+
+test('allows distinct accounts from the same network when multiple connections are enabled', function () {
+    config()->set('trypost.allow_multiple_social_accounts', true);
+
+    SocialAccount::factory()->facebook()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => 'page-a',
+        'is_active' => true,
+    ]);
+
+    $second = SocialAccount::factory()->facebook()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => 'page-b',
+        'is_active' => true,
+    ]);
+
+    expect($second->exists)->toBeTrue()
+        ->and($this->workspace->socialAccounts()->where('is_active', true)->count())->toBe(2);
+});
+
+test('prevents connecting the same identity through two variants', function () {
+    config()->set('trypost.allow_multiple_social_accounts', true);
+
+    SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'shared-ig-id',
+    ]);
+
+    expect(fn () => SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::InstagramFacebook,
+        'platform_user_id' => 'shared-ig-id',
+    ]))->toThrow(NetworkAlreadyConnectedException::class);
 });
 
 test('blocks a second account of the same network', function () {

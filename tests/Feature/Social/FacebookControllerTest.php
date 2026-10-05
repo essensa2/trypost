@@ -86,6 +86,7 @@ test('facebook oauth callback creates account with single page', function () {
 
 test('facebook callback shows network_taken when the network is already connected', function () {
     config()->set('trypost.self_hosted', false);
+    config()->set('trypost.allow_multiple_social_accounts', false);
 
     SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,
@@ -191,7 +192,29 @@ test('facebook callback fails when no pages found', function () {
 
     $response->assertOk();
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
-    $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'No Facebook Pages found. You need to be an admin of at least one page.'));
+    $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', __('accounts.popup_callback.no_facebook_pages')));
+});
+
+test('facebook callback reports a page API failure separately from an empty page list', function () {
+    session(['social_connect_workspace' => $this->workspace->id]);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->token = 'test-user-token';
+
+    Socialite::shouldReceive('driver')
+        ->with('facebook')
+        ->andReturn(Mockery::mock()->shouldReceive('usingGraphVersion')->andReturnSelf()->shouldReceive('user')->andReturn($socialiteUser)->getMock());
+
+    Http::fake([
+        'https://graph.facebook.com/*/me/accounts*' => Http::response(['error' => ['message' => 'Permission denied']], 403),
+    ]);
+
+    $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
+
+    $response->assertOk();
+    $response->assertInertia(fn (AssertableInertia $page) => $page
+        ->where('success', false)
+        ->where('message', __('accounts.popup_callback.facebook_pages_unavailable')));
 });
 
 test('facebook callback fails with expired session', function () {
@@ -204,8 +227,8 @@ test('facebook callback fails with expired session', function () {
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Session expired. Please try again.'));
 });
 
-test('user can connect multiple facebook accounts in self-hosted mode', function () {
-    config(['trypost.self_hosted' => true]);
+test('user can connect multiple facebook pages in hosted mode', function () {
+    config(['trypost.self_hosted' => false]);
 
     SocialAccount::factory()->facebook()->create([
         'workspace_id' => $this->workspace->id,

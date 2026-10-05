@@ -43,6 +43,30 @@ test('accounts index shows platforms and connected accounts', function () {
     );
 });
 
+test('accounts index returns every connected page with its active state', function () {
+    SocialAccount::factory()->facebook()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => 'page-one',
+        'is_active' => true,
+    ]);
+    SocialAccount::factory()->facebook()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => 'page-two',
+        'is_active' => false,
+    ]);
+
+    $response = $this->actingAs($this->user)->get(route('app.accounts'));
+
+    $response->assertOk();
+    $response->assertInertia(fn ($page) => $page
+        ->component('accounts/Index', false)
+        ->has('connectedAccounts', 2)
+        ->where('connectedAccounts', fn ($accounts) => collect($accounts)
+            ->contains(fn ($account) => $account['platform_user_id'] === 'page-one' && $account['is_active'] === true)
+            && collect($accounts)->contains(fn ($account) => $account['platform_user_id'] === 'page-two' && $account['is_active'] === false))
+    );
+});
+
 test('accounts index offers a single linkedin card and no standalone linkedin page card', function () {
     $response = $this->actingAs($this->user)->get(route('app.accounts'));
 

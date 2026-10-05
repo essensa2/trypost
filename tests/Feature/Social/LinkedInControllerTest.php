@@ -479,6 +479,7 @@ test('select fails with expired session', function () {
 
 test('selecting the person shows network_taken when a linkedin page already occupies the network', function () {
     config()->set('trypost.self_hosted', false);
+    config()->set('trypost.allow_multiple_social_accounts', false);
 
     SocialAccount::factory()->linkedinPage()->create([
         'workspace_id' => $this->workspace->id,

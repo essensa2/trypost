@@ -38,6 +38,24 @@ test('toggle inactive account to active', function () {
     expect($account->fresh()->is_active)->toBeTrue();
 });
 
+test('toggling one page leaves another page active', function () {
+    $firstPage = SocialAccount::factory()->facebook()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => 'page-one',
+        'is_active' => true,
+    ]);
+    $secondPage = SocialAccount::factory()->facebook()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => 'page-two',
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($this->user)->put(route('app.accounts.toggle', $firstPage))->assertRedirect();
+
+    expect($firstPage->fresh()->is_active)->toBeFalse();
+    expect($secondPage->fresh()->is_active)->toBeTrue();
+});
+
 test('cannot toggle account from another workspace', function () {
     $otherWorkspace = Workspace::factory()->create();
     $account = SocialAccount::factory()->create([

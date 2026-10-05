@@ -175,6 +175,7 @@ test('threads callback handles token exchange failure', function () {
 
 test('threads callback shows network_taken when the network is already connected', function () {
     config()->set('trypost.self_hosted', false);
+    config()->set('trypost.allow_multiple_social_accounts', false);
 
     SocialAccount::factory()->threads()->create([
         'workspace_id' => $this->workspace->id,

@@ -13,11 +13,8 @@ use App\Services\PostHogService;
 class SocialAccountObserver
 {
     /**
-     * Enforce one connected account per social network per workspace. Variants
-     * of the same network (LinkedIn profile/page, Instagram standalone/Facebook)
-     * collapse via Platform::network(). Reconnecting an existing account goes
-     * through updateOrCreate's update path and never reaches this hook. Bypassed
-     * in self-hosted mode, which has no per-workspace limits.
+     * Prevent duplicate identities while allowing distinct accounts on the
+     * same network when multiple connections are enabled.
      */
     public function creating(SocialAccount $socialAccount): void
     {
@@ -33,10 +30,13 @@ class SocialAccountObserver
 
         $conflict = SocialAccount::query()
             ->where('workspace_id', $socialAccount->workspace_id)
-            ->whereIn('platform', $platform->networkPlatformValues())
-            ->exists();
+            ->whereIn('platform', $platform->networkPlatformValues());
 
-        if ($conflict) {
+        if (config('trypost.allow_multiple_social_accounts')) {
+            $conflict->where('platform_user_id', $socialAccount->platform_user_id);
+        }
+
+        if ($conflict->exists()) {
             throw new NetworkAlreadyConnectedException($platform);
         }
     }

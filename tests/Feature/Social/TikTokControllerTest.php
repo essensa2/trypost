@@ -21,7 +21,9 @@ beforeEach(function () {
 
 test('tiktok connect redirects to oauth provider', function () {
     $driverMock = Mockery::mock();
-    $driverMock->shouldReceive('scopes')->andReturnSelf();
+    $driverMock->shouldReceive('scopes')
+        ->with(['user.info.basic', 'video.publish'])
+        ->andReturnSelf();
     $driverMock->shouldReceive('redirect')->andReturn(Mockery::mock([
         'getTargetUrl' => 'https://www.tiktok.com/v2/auth/authorize?test=1',
     ]));
@@ -87,8 +89,8 @@ test('tiktok callback fails with expired session', function () {
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Session expired. Please try again.'));
 });
 
-test('user can connect multiple tiktok accounts in self-hosted mode', function () {
-    config()->set('trypost.self_hosted', true);
+test('user can connect multiple tiktok accounts in hosted mode', function () {
+    config()->set('trypost.self_hosted', false);
 
     SocialAccount::factory()->tiktok()->create([
         'workspace_id' => $this->workspace->id,
@@ -143,4 +145,39 @@ test('tiktok callback handles oauth errors gracefully', function () {
     $response->assertOk();
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Error connecting account. Please try again.'));
+});
+
+test('tiktok callback explains an unapproved OAuth scope', function () {
+    session(['social_connect_workspace' => $this->workspace->id]);
+
+    $response = $this->actingAs($this->user)->get(route('app.social.tiktok.callback', [
+        'error' => 'invalid_scope',
+        'log_id' => 'test-log-id',
+    ]));
+
+    $response->assertOk();
+    $response->assertInertia(fn (AssertableInertia $page) => $page
+        ->where('success', false)
+        ->where('message', __('accounts.popup_callback.tiktok_invalid_scope')));
+});
+
+test('tiktok callback does not connect an account without publishing permission', function () {
+    session(['social_connect_workspace' => $this->workspace->id]);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->approvedScopes = ['user.info.basic'];
+
+    $socialiteMock = Mockery::mock();
+    $socialiteMock->shouldReceive('scopes')->andReturnSelf();
+    $socialiteMock->shouldReceive('user')->andReturn($socialiteUser);
+
+    Socialite::shouldReceive('driver')->with('tiktok')->andReturn($socialiteMock);
+
+    $response = $this->actingAs($this->user)->get(route('app.social.tiktok.callback'));
+
+    $response->assertOk();
+    $response->assertInertia(fn (AssertableInertia $page) => $page
+        ->where('success', false)
+        ->where('message', __('accounts.popup_callback.tiktok_publish_permission_missing')));
+    expect($this->workspace->socialAccounts()->count())->toBe(0);
 });

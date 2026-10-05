@@ -120,6 +120,7 @@ it('links a private channel that has no username', function () {
 
 it('does not connect a second telegram channel when one is already connected', function () {
     config(['trypost.self_hosted' => false]);
+    config(['trypost.allow_multiple_social_accounts' => false]);
     Event::fake([TelegramConnectFailed::class]);
 
     SocialAccount::factory()->telegram()->create([
@@ -145,9 +146,9 @@ it('does not connect a second telegram channel when one is already connected', f
     );
 });
 
-it('connects a second telegram channel in self-hosted mode', function () {
+it('connects a second telegram channel in hosted mode', function () {
     Http::fake();
-    config(['trypost.self_hosted' => true]);
+    config(['trypost.self_hosted' => false]);
 
     SocialAccount::factory()->telegram()->create([
         'workspace_id' => $this->workspace->id,

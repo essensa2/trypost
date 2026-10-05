@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Auth;
 use App\Enums\SocialAccount\Platform as SocialPlatform;
 use App\Enums\SocialAccount\Status;
 use App\Models\Workspace;
+use App\Services\Social\TokenRedactor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Inertia\Response as InertiaResponse;
@@ -19,15 +20,6 @@ class TikTokController extends SocialController
 
     protected SocialPlatform $platform = SocialPlatform::TikTok;
 
-    protected array $scopes = [
-        'user.info.basic',
-        'user.info.profile',
-        'user.info.stats',
-        'video.publish',
-        'video.upload',
-        'video.list',
-    ];
-
     public function connect(Request $request): Response
     {
         $this->ensurePlatformEnabled();
@@ -38,7 +30,7 @@ class TikTokController extends SocialController
 
         session(['social_reconnect_id' => null]);
 
-        return $this->redirectToProvider($request, $this->driver, $this->scopes);
+        return $this->redirectToProvider($request, $this->driver, $this->scopes());
     }
 
     public function callback(Request $request): InertiaResponse
@@ -55,12 +47,31 @@ class TikTokController extends SocialController
             return $this->popupCallback(false, __('accounts.popup_callback.workspace_not_found'), $this->platform->value);
         }
 
+        if ($request->filled('error')) {
+            Log::warning('TikTok OAuth authorization denied', [
+                'error' => $request->string('error')->toString(),
+                'description' => TokenRedactor::redact($request->string('error_description')->toString()),
+                'log_id' => $request->string('log_id')->toString(),
+            ]);
+
+            $message = match ($request->string('error')->toString()) {
+                'invalid_scope' => __('accounts.popup_callback.tiktok_invalid_scope'),
+                'redirect_uri_mismatch' => __('accounts.popup_callback.tiktok_redirect_mismatch'),
+                default => __('accounts.popup_callback.tiktok_authorization_failed'),
+            };
+
+            return $this->popupCallback(false, $message, $this->platform->value);
+        }
+
         try {
             $socialUser = Socialite::driver($this->driver)
-                ->scopes($this->scopes)
+                ->scopes($this->scopes())
                 ->user();
 
-            // TikTok returns username via getNickname() when user.info.profile scope is included
+            if (! in_array('video.publish', $socialUser->approvedScopes ?? [], true)) {
+                return $this->popupCallback(false, __('accounts.popup_callback.tiktok_publish_permission_missing'), $this->platform->value);
+            }
+
             $username = $socialUser->getNickname();
             $avatarPath = uploadFromUrl($socialUser->getAvatar());
 
@@ -88,10 +99,18 @@ class TikTokController extends SocialController
             return $this->popupCallback(true, __('accounts.popup_callback.connected'), $this->platform->value);
         } catch (\Exception $e) {
             Log::error('TikTok OAuth Error', [
-                'error' => $e->getMessage(),
+                'error' => TokenRedactor::redact($e->getMessage()),
             ]);
 
             return $this->popupCallback(false, __('accounts.popup_callback.error_connecting'), $this->platform->value);
         }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function scopes(): array
+    {
+        return config('trypost.platforms.tiktok.scopes', ['user.info.basic', 'video.publish']);
     }
 }

@@ -56,6 +56,7 @@ test('instagram-facebook select connects the page in self-hosted mode', function
 
 test('instagram-facebook select shows network_taken when a standalone instagram is already connected', function () {
     config()->set('trypost.self_hosted', false);
+    config()->set('trypost.allow_multiple_social_accounts', false);
 
     SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,

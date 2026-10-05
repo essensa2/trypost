@@ -8,9 +8,11 @@ import { toast } from 'vue-sonner';
 import TelegramConnectDialog from '@/components/accounts/TelegramConnectDialog.vue';
 import ConfirmDeleteModal from '@/components/ConfirmDeleteModal.vue';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { useOAuthPopup } from '@/composables/useOAuthPopup';
-import { disconnect } from '@/routes/app/accounts';
 import { Platform } from '@/types/platform';
+
+import { disconnect, toggle } from '@/routes/app/accounts';
 
 export interface AvailablePlatform {
     value: string;
@@ -27,6 +29,7 @@ export interface ConnectedAccount {
     display_name: string;
     avatar_url: string | null;
     status: 'connected' | 'disconnected' | 'token_expired' | null;
+    is_active: boolean;
 }
 
 const props = withDefaults(
@@ -122,32 +125,20 @@ const platformTheme: Record<
 const themeFor = (value: string) =>
     platformTheme[value] ?? { bg: 'bg-muted', rotate: '', image: '' };
 
-// One account per network: map each connected network to its account so every
-// platform card belonging to that network reflects the connection.
-const connectedByNetwork = computed((): Record<string, ConnectedAccount> => {
-    const map: Record<string, ConnectedAccount> = {};
+const accountsByPlatform = computed((): Record<string, ConnectedAccount[]> => {
+    const accounts: Record<string, ConnectedAccount[]> = {};
 
-    for (const account of props.connectedAccounts) {
-        if (!map[account.network]) {
-            map[account.network] = account;
-        }
+    for (const platform of props.platforms) {
+        accounts[platform.value] = props.connectedAccounts.filter(
+            (account) =>
+                account.platform === platform.value ||
+                (platform.value === Platform.LinkedIn &&
+                    account.platform === Platform.LinkedInPage),
+        );
     }
 
-    return map;
+    return accounts;
 });
-
-// platform value -> the account occupying its network (if any).
-const cardConnection = computed(
-    (): Record<string, ConnectedAccount | undefined> => {
-        const map: Record<string, ConnectedAccount | undefined> = {};
-
-        for (const platform of props.platforms) {
-            map[platform.value] = connectedByNetwork.value[platform.network];
-        }
-
-        return map;
-    },
-);
 
 const telegramOpen = ref(false);
 const disconnectModal = ref<InstanceType<typeof ConfirmDeleteModal> | null>(
@@ -174,6 +165,10 @@ const disconnectAccount = (account: ConnectedAccount) => {
 const needsReconnect = (account: ConnectedAccount): boolean =>
     account.status === 'disconnected' || account.status === 'token_expired';
 
+const toggleAccount = (account: ConnectedAccount) => {
+    router.put(toggle.url(account.id), {}, { preserveScroll: true });
+};
+
 const connectEntryFor = (platformValue: string): string =>
     platformValue === Platform.LinkedInPage ? Platform.LinkedIn : platformValue;
 
@@ -186,14 +181,6 @@ const openConnect = (platformValue: string) => {
     openOAuthPopup(platformValue);
 };
 
-const connectPlatform = (platformValue: string) => {
-    if (cardConnection.value[platformValue]) {
-        return;
-    }
-
-    openConnect(platformValue);
-};
-
 const reconnectAccount = (account: ConnectedAccount) => {
     openConnect(connectEntryFor(account.platform));
 };
@@ -202,6 +189,7 @@ const CardState = {
     Connect: 'connect',
     Connected: 'connected',
     Reconnect: 'reconnect',
+    Inactive: 'inactive',
 } as const;
 
 type CardStateValue = (typeof CardState)[keyof typeof CardState];
@@ -210,12 +198,18 @@ const cardState = computed((): Record<string, CardStateValue> => {
     const map: Record<string, CardStateValue> = {};
 
     for (const platform of props.platforms) {
-        const account = connectedByNetwork.value[platform.network];
-        map[platform.value] = !account
-            ? CardState.Connect
-            : needsReconnect(account)
-              ? CardState.Reconnect
-              : CardState.Connected;
+        const accounts = accountsByPlatform.value[platform.value];
+        map[platform.value] =
+            accounts.length === 0
+                ? CardState.Connect
+                : accounts.some(
+                        (account) =>
+                            account.is_active && !needsReconnect(account),
+                    )
+                  ? CardState.Connected
+                  : accounts.every(needsReconnect)
+                    ? CardState.Reconnect
+                    : CardState.Inactive;
     }
 
     return map;
@@ -232,7 +226,8 @@ const cardState = computed((): Record<string, CardStateValue> => {
                     'group relative flex flex-col items-center gap-3 rounded-xl border-2 border-foreground p-4 text-center shadow-xs transition-shadow',
                     cardState[platform.value] === CardState.Connected
                         ? 'bg-emerald-50'
-                        : cardState[platform.value] === CardState.Reconnect
+                        : cardState[platform.value] === CardState.Reconnect ||
+                            cardState[platform.value] === CardState.Inactive
                           ? 'bg-amber-50'
                           : 'bg-card hover:shadow-md',
                 ]"
@@ -245,14 +240,16 @@ const cardState = computed((): Record<string, CardStateValue> => {
                     <IconCheck class="size-3.5" stroke-width="3" />
                 </span>
                 <span
-                    v-else-if="cardState[platform.value] === CardState.Reconnect"
+                    v-else-if="
+                        cardState[platform.value] === CardState.Reconnect
+                    "
                     class="absolute -top-2 -right-2 inline-flex size-6 items-center justify-center rounded-full border-2 border-foreground bg-amber-200 text-amber-700 shadow-2xs"
                     aria-hidden="true"
                 >
                     <IconAlertTriangle class="size-3.5" stroke-width="2.5" />
                 </span>
                 <span
-                    v-else
+                    v-else-if="cardState[platform.value] === CardState.Connect"
                     class="pointer-events-none absolute -top-2 -right-2 inline-flex size-6 items-center justify-center rounded-full border-2 border-foreground bg-violet-200 text-foreground opacity-0 shadow-2xs transition-all group-hover:scale-110 group-hover:rotate-90 group-hover:opacity-100"
                     aria-hidden="true"
                 >
@@ -289,47 +286,75 @@ const cardState = computed((): Record<string, CardStateValue> => {
                     >
                         {{ getPlatformDescription(platform.value) }}
                     </p>
-                    <p
-                        v-else-if="cardState[platform.value] === CardState.Reconnect"
-                        class="mt-0.5 truncate text-xs leading-tight font-medium text-amber-700"
-                    >
-                        {{ $t('accounts.connection_lost') }}
-                    </p>
-                    <p
-                        v-else
-                        class="mt-0.5 truncate text-xs leading-tight text-foreground/70"
-                    >
-                        {{
-                            cardConnection[platform.value]?.display_name ||
-                            cardConnection[platform.value]?.username
-                        }}
-                    </p>
+                    <div v-else class="mt-2 flex flex-col gap-2 text-left">
+                        <div
+                            v-for="account in accountsByPlatform[
+                                platform.value
+                            ]"
+                            :key="account.id"
+                            class="flex min-w-0 flex-col gap-2 rounded-lg border border-foreground/20 bg-background p-2"
+                        >
+                            <div class="flex w-full min-w-0 items-center gap-2">
+                                <div class="min-w-0 flex-1">
+                                    <p class="truncate text-xs font-medium">
+                                        {{
+                                            account.display_name ||
+                                            account.username
+                                        }}
+                                    </p>
+                                    <p
+                                        v-if="needsReconnect(account)"
+                                        class="text-xs text-amber-700"
+                                    >
+                                        {{ $t('accounts.connection_lost') }}
+                                    </p>
+                                    <p
+                                        v-else-if="!account.is_active"
+                                        class="text-xs text-amber-700"
+                                    >
+                                        {{ $t('accounts.inactive') }}
+                                    </p>
+                                </div>
+                                <Switch
+                                    :model-value="account.is_active"
+                                    :aria-label="`${$t('accounts.toggle_account')} ${account.display_name || account.username}`"
+                                    @update:model-value="toggleAccount(account)"
+                                />
+                            </div>
+                            <div class="flex flex-wrap justify-end gap-1">
+                                <Button
+                                    v-if="needsReconnect(account)"
+                                    variant="outline"
+                                    size="sm"
+                                    @click="reconnectAccount(account)"
+                                >
+                                    {{ $t('accounts.reconnect') }}
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    :aria-label="`${$t('accounts.disconnect')} ${account.display_name || account.username}`"
+                                    @click="disconnectAccount(account)"
+                                >
+                                    {{ $t('accounts.disconnect') }}
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <Button
-                    v-if="cardState[platform.value] === CardState.Reconnect"
                     size="sm"
                     class="mt-auto w-full"
-                    @click="reconnectAccount(cardConnection[platform.value]!)"
+                    @click="openConnect(platform.value)"
                 >
-                    {{ $t('accounts.reconnect') }}
-                </Button>
-                <Button
-                    v-else-if="cardState[platform.value] === CardState.Connected"
-                    variant="destructive"
-                    size="sm"
-                    class="mt-auto w-full"
-                    @click="disconnectAccount(cardConnection[platform.value]!)"
-                >
-                    {{ $t('accounts.disconnect') }}
-                </Button>
-                <Button
-                    v-else
-                    size="sm"
-                    class="mt-auto w-full"
-                    @click="connectPlatform(platform.value)"
-                >
-                    {{ $t('accounts.connect_cta') }}
+                    {{
+                        $t(
+                            accountsByPlatform[platform.value].length
+                                ? 'accounts.connect_another'
+                                : 'accounts.connect_cta',
+                        )
+                    }}
                 </Button>
             </div>
         </div>

@@ -307,6 +307,7 @@ test('youtube channel selection fails with expired session', function () {
 
 test('youtube callback shows network_taken when the network is already connected', function () {
     config()->set('trypost.self_hosted', false);
+    config()->set('trypost.allow_multiple_social_accounts', false);
 
     SocialAccount::factory()->youtube()->create([
         'workspace_id' => $this->workspace->id,
